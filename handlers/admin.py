@@ -105,62 +105,132 @@ async def cb_add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📢 Чтобы подключить канал:\n\n"
-        "1. Добавьте бота администратором в свой канал\n"
-        "2. Перешлите сюда ЛЮБОЕ сообщение из этого канала\n\n"
-        "Бот определит канал автоматически.",
+        "📢 <b>Подключение канала</b>\n\n"
+        "1. Добавьте бота администратором в ваш канал\n"
+        "   (Управление → Администраторы → Добавить → @Tony_auction_bot)\n"
+        "2. Введите сюда <b>@username канала</b>\n\n"
+        "🔒 Для приватного канала — пришлите его числовой ID.",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Назад", callback_data="my_channels")]
         ]),
     )
-    context.user_data["awaiting_channel"] = True
+    context.user_data["awaiting_channel_input"] = True
 
 
-async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_channel"):
+async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_channel_input"):
         return
 
-    msg = update.message
-    forwarded = msg.forward_from_chat
+    text = update.message.text.strip().lstrip("@")
 
-    if not forwarded or forwarded.type != "channel":
-        await msg.reply_text(
-            "❌ Перешлите сообщение именно из канала, а не из чата/переписки.\n"
-            "Попробуйте ещё раз или нажмите /cancel."
-        )
+    context.user_data["pending_channel"] = text
+    context.user_data["awaiting_channel_input"] = False
+
+    await update.message.reply_text("🔍 Проверяю доступ к каналу...")
+    await _check_channel(context, update.effective_user.id, chat_id_sender=update.message.chat.id, destination=update.message, input_text=text)
+
+
+async def cb_check_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    text = context.user_data.get("pending_channel")
+    if not text:
+        await query.edit_message_text("⚙️ Сначала введите @username канала. Нажмите «➕ Добавить канал» и попробуйте снова.")
         return
+    await query.edit_message_text("🔍 Проверяю...")
+    await _check_channel(context, query.from_user.id, chat_id_sender=query.message.chat.id, destination=query, input_text=text)
 
-    context.user_data["awaiting_channel"] = False
 
+async def _check_channel(context: ContextTypes.DEFAULT_TYPE, user_id, chat_id_sender, destination, input_text):
     try:
-        bot_member = await context.bot.get_chat_member(forwarded.id, context.bot.id)
-        is_admin = bot_member.status in ("administrator", "creator")
-    except Exception:
-        is_admin = False
+        if input_text.lstrip("-").isdigit():
+            chat_id = int(input_text)
+        else:
+            chat = await context.bot.get_chat(
+                input_text if input_text.startswith("@") else f"@{input_text}"
+            )
+            chat_id = chat.id
 
-    if not is_admin:
-        await msg.reply_text(
-            f"❌ Бот не является администратором канала <b>@{forwarded.username or forwarded.title}</b>.\n\n"
-            f"1. Откройте канал\n"
-            f"2. Управление → Администраторы → Добавить администратора → найдите бота\n"
-            f"3. Выдайте ему права (хотя бы для постинга)\n"
-            f"4. Затем перешлите сюда сообщение из канала снова",
-            parse_mode=ParseMode.HTML,
+        bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
+        bot_is_admin = bot_member.status in ("administrator", "creator")
+
+        user_member = await context.bot.get_chat_member(chat_id, user_id)
+        user_is_admin = user_member.status in ("administrator", "creator")
+    except Exception:
+        bot_is_admin = False
+        user_is_admin = False
+        chat_id = None
+
+    if not chat_id:
+        text = (
+            "❌ <b>Не удалось найти канал.</b>\n\n"
+            "Убедитесь, что @username указан верно.\n"
+            "Для приватного канала используйте числовой ID.",
         )
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔴 Попробовать снова", callback_data="add_channel")],
+        ])
+        if hasattr(destination, "edit_message_text"):
+            await destination.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        else:
+            await destination.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
         return
 
+    if not bot_is_admin:
+        text = (
+            f"⚠️ <b>Бот не является администратором канала.</b>\n\n"
+            f"1. Откройте канал\n"
+            f"2. Управление → Администраторы → Добавить администратора\n"
+            f"3. Выберите бота и дайте права\n"
+            f"4. Нажмите «✅ Проверить» еще раз"
+        )
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Проверить", callback_data="check_channel")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="my_channels")],
+        ])
+        if hasattr(destination, "edit_message_text"):
+            await destination.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        else:
+            await destination.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        return
+
+    if not user_is_admin:
+        text = (
+            f"❌ <b>Вы не являетесь администратором этого канала.</b>\n\n"
+            f"Подключать можно только каналы, где вы имеете права администратора."
+        )
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data="my_channels")],
+        ])
+        if hasattr(destination, "edit_message_text"):
+            await destination.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        else:
+            await destination.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        return
+
+    chat = await context.bot.get_chat(chat_id)
     await db.add_channel(
-        admin_id=msg.from_user.id,
-        channel_id=forwarded.id,
-        title=forwarded.title,
-        username=forwarded.username,
+        admin_id=user_id,
+        channel_id=chat_id,
+        title=chat.title,
+        username=chat.username,
     )
 
-    await msg.reply_text(
-        f"✅ Канал <b>{forwarded.title or ('@' + forwarded.username if forwarded.username else '')}</b> подключён!",
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_main_menu_keyboard(),
+    name = chat.title or (f"@{chat.username}" if chat.username else str(chat_id))
+    text = (
+        f"✅ <b>Канал подключён!</b>\n\n"
+        f"📢 {name}\n\n"
+        f"Теперь можно создавать розыгрыши."
     )
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎁 Создать розыгрыш", callback_data=f"create_auction_ch:{chat_id}")],
+        [InlineKeyboardButton("📢 Мои каналы", callback_data="my_channels")],
+    ])
+    if hasattr(destination, "edit_message_text"):
+        await destination.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    else:
+        await destination.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
 
 
 async def cb_remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):

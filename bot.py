@@ -16,7 +16,8 @@ from handlers.admin import (
     cb_channel_detail,
     cb_add_channel,
     cb_remove_channel,
-    handle_forwarded_message,
+    handle_channel_input,
+    cb_check_channel,
     cb_my_auctions,
     cb_admin_auction,
     cb_view_bids,
@@ -58,7 +59,7 @@ def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
 
-    app.add_handler(MessageHandler(filters.FORWARDED, handle_forwarded_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_channel_input))
 
     app.add_handler(CallbackQueryHandler(cb_participate, pattern=r"^participate:"))
     app.add_handler(CallbackQueryHandler(cb_increase, pattern=r"^increase:"))
@@ -68,6 +69,7 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_my_channels, pattern=r"^my_channels$"))
     app.add_handler(CallbackQueryHandler(cb_channel_detail, pattern=r"^channel:"))
     app.add_handler(CallbackQueryHandler(cb_add_channel, pattern=r"^add_channel$"))
+    app.add_handler(CallbackQueryHandler(cb_check_channel, pattern=r"^check_channel$"))
     app.add_handler(CallbackQueryHandler(cb_remove_channel, pattern=r"^remove_channel:"))
 
     app.add_handler(CallbackQueryHandler(cb_my_auctions, pattern=r"^my_auctions$"))
