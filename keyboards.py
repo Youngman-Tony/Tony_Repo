@@ -35,10 +35,7 @@ def get_channel_detail_keyboard(channel_id):
 
 def get_auction_preview_keyboard(auction_id):
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("👁 Предпросмотр", callback_data=f"preview:{auction_id}"),
-            InlineKeyboardButton("🚀 Запустить", callback_data=f"start_auction:{auction_id}"),
-        ],
+        [InlineKeyboardButton("🚀 Запустить", callback_data=f"start_auction:{auction_id}")],
         [InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_auction:{auction_id}")],
     ])
 
@@ -95,7 +92,6 @@ def get_admin_auction_detail_keyboard(auction_id, status):
     if status == "draft":
         buttons = [
             [
-                InlineKeyboardButton("👁 Предпросмотр", callback_data=f"preview:{auction_id}"),
                 InlineKeyboardButton("🚀 Запустить", callback_data=f"start_auction:{auction_id}"),
             ],
             [InlineKeyboardButton("❌ Удалить", callback_data=f"cancel_auction:{auction_id}")],

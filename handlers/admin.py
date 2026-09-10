@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from telegram import Update, InputMediaPhoto, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -484,30 +484,7 @@ def _build_auction_text(auction):
     )
 
 
-# ---------- Предпросмотр / запуск ----------
-
-async def cb_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    auction_id = int(query.data.split(":")[1])
-    auction = await db.get_auction(auction_id)
-    if not auction:
-        await query.edit_message_text("❌ Розыгрыш не найден.")
-        return
-    text = _build_auction_text(auction)
-
-    if auction["photo_id"]:
-        await query.message.edit_media(
-            InputMediaPhoto(media=auction["photo_id"], caption=text, parse_mode=ParseMode.HTML),
-            reply_markup=get_auction_preview_keyboard(auction_id),
-        )
-    else:
-        await query.edit_message_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_auction_preview_keyboard(auction_id),
-        )
-
+# ---------- Запуск / отмена ----------
 
 async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -516,11 +493,11 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auction = await db.get_auction(auction_id)
 
     if not auction:
-        await query.edit_message_text("❌ Розыгрыш не найден.")
+        await query.message.reply_text("❌ Розыгрыш не найден.")
         return
 
     if auction["status"] not in ("draft", "scheduled"):
-        await query.edit_message_text("❌ Этот розыгрыш уже запущен или завершён.")
+        await query.message.reply_text("❌ Этот розыгрыш уже запущен или завершён.")
         return
 
     channel_id = auction["channel_id"]
@@ -530,10 +507,11 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if start_dt > now:
         await db.update_auction_status(auction_id, "scheduled")
-        await query.edit_message_text(
+        await query.message.reply_text(
             f"⏰ Розыгрыш запланирован на {start_dt.strftime('%d.%m.%Y %H:%M')}. "
             f"Бот автоматически опубликует его в канале в указанное время."
         )
+        await query.message.edit_reply_markup(reply_markup=None)
         from scheduler import schedule_auction_start
         schedule_auction_start(context.job_queue, auction_id, start_dt)
         return
@@ -574,7 +552,8 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await db.update_auction_status(auction_id, "active", channel_message_id=msg.message_id)
 
-    await query.edit_message_text("✅ Розыгрыш запущен и опубликован в канале!")
+    await query.message.reply_text("✅ Розыгрыш запущен и опубликован в канале!")
+    await query.message.edit_reply_markup(reply_markup=None)
 
     from scheduler import schedule_auction_end
     schedule_auction_end(context.job_queue, auction_id, end_dt)
@@ -585,7 +564,8 @@ async def cb_cancel_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     auction_id = int(query.data.split(":")[1])
     await db.update_auction_status(auction_id, "cancelled")
-    await query.edit_message_text("❌ Розыгрыш отменён.")
+    await query.message.reply_text("❌ Розыгрыш отменён.")
+    await query.message.edit_reply_markup(reply_markup=None)
 
 
 # ---------- Список розыгрышей ----------
@@ -751,7 +731,6 @@ def get_admin_conversation_handler():
                 CallbackQueryHandler(cb_cancel_create, pattern="^cancel_dialog$"),
             ],
             PREVIEW: [
-                CallbackQueryHandler(cb_preview, pattern="^preview:"),
                 CallbackQueryHandler(cb_start_auction, pattern="^start_auction:"),
                 CallbackQueryHandler(cb_cancel_auction, pattern="^cancel_auction:"),
             ],

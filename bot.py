@@ -24,7 +24,6 @@ from handlers.admin import (
     cb_check_channel,
     cb_my_auctions,
     cb_admin_auction,
-    cb_preview,
     cb_start_auction,
     cb_cancel_auction,
     cb_view_bids,
@@ -108,7 +107,6 @@ def main():
 
     app.add_handler(CallbackQueryHandler(cb_my_auctions, pattern=r"^my_auctions$"))
     app.add_handler(CallbackQueryHandler(cb_admin_auction, pattern=r"^admin_auction:"))
-    app.add_handler(CallbackQueryHandler(cb_preview, pattern=r"^preview:"))
     app.add_handler(CallbackQueryHandler(cb_start_auction, pattern=r"^start_auction:"))
     app.add_handler(CallbackQueryHandler(cb_cancel_auction, pattern=r"^cancel_auction:"))
     app.add_handler(CallbackQueryHandler(cb_view_bids, pattern=r"^view_bids:"))
