@@ -459,7 +459,7 @@ async def _create_auction_record(user_id, context, query_message=None):
     return PREVIEW
 
 
-async def _build_auction_text(auction):
+def _build_auction_text(auction):
     start = datetime.fromisoformat(auction["start_time"]).strftime("%d.%m.%Y %H:%M")
     end = datetime.fromisoformat(auction["end_time"]).strftime("%d.%m.%Y %H:%M")
     status_map = {"draft": "📝 Черновик", "scheduled": "⏰ Запланирован", "active": "🟢 Активен", "finished": "🔴 Завершён", "cancelled": "❌ Отменён"}
