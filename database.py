@@ -6,8 +6,28 @@ from config import DB_PATH
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS admins (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                title TEXT,
+                username TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(admin_id, channel_id)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS auctions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id INTEGER NOT NULL,
                 admin_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 min_bid INTEGER NOT NULL,
@@ -35,11 +55,70 @@ async def init_db():
         await db.commit()
 
 
-async def create_auction(admin_id, title, min_bid, step, start_time, end_time, photo_id=None):
+# ---------- Админы ----------
+
+async def register_admin(user_id, username, first_name):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO admins (user_id, username, first_name) VALUES (?, ?, ?)",
+            (user_id, username, first_name)
+        )
+        await db.commit()
+
+
+async def is_admin(user_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT 1 FROM admins WHERE user_id = ?", (user_id,))
+        return await cursor.fetchone() is not None
+
+
+# ---------- Каналы ----------
+
+async def add_channel(admin_id, channel_id, title, username):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO channels (admin_id, channel_id, title, username) VALUES (?, ?, ?, ?)",
+            (admin_id, channel_id, title, username)
+        )
+        await db.commit()
+
+
+async def get_channels_by_admin(admin_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM channels WHERE admin_id = ? ORDER BY created_at DESC",
+            (admin_id,)
+        )
+        return await cursor.fetchall()
+
+
+async def get_channel(admin_id, channel_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM channels WHERE admin_id = ? AND channel_id = ?",
+            (admin_id, channel_id)
+        )
+        return await cursor.fetchone()
+
+
+async def remove_channel(admin_id, channel_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM channels WHERE admin_id = ? AND channel_id = ?",
+            (admin_id, channel_id)
+        )
+        await db.commit()
+
+
+# ---------- Розыгрыши ----------
+
+async def create_auction(admin_id, title, min_bid, step, start_time, end_time, photo_id=None, channel_id=None):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO auctions (admin_id, title, min_bid, step, start_time, end_time, photo_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')",
-            (admin_id, title, min_bid, step, start_time, end_time, photo_id)
+            "INSERT INTO auctions (admin_id, title, min_bid, step, start_time, end_time, photo_id, status, channel_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?)",
+            (admin_id, title, min_bid, step, start_time, end_time, photo_id, channel_id)
         )
         await db.commit()
         return cursor.lastrowid
@@ -164,5 +243,16 @@ async def get_auctions_to_end():
         cursor = await db.execute(
             "SELECT * FROM auctions WHERE status = 'active' AND end_time <= ?",
             (now,)
+        )
+        return await cursor.fetchall()
+
+
+async def get_all_auctions_by_status(statuses):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        placeholders = ",".join("?" for _ in statuses)
+        cursor = await db.execute(
+            f"SELECT * FROM auctions WHERE status IN ({placeholders}) ORDER BY created_at DESC",
+            statuses
         )
         return await cursor.fetchall()

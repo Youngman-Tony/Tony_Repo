@@ -4,9 +4,56 @@ from datetime import datetime
 from telegram.constants import ParseMode
 
 import database as db
-from config import CHANNEL_ID
+from keyboards import get_participate_keyboard
 
 logger = logging.getLogger(__name__)
+
+
+async def auction_start_callback(context):
+    job = context.job
+    auction_id = job.data
+
+    auction = await db.get_auction(auction_id)
+    if not auction or auction["status"] != "scheduled":
+        return
+
+    await _publish_auction(context, auction)
+
+
+async def _publish_auction(context, auction):
+    auction_id = auction["id"]
+    start_dt = datetime.fromisoformat(auction["start_time"])
+    end_dt = datetime.fromisoformat(auction["end_time"])
+
+    channel_text = (
+        f"🎯 <b>РОЗЫГРЫШ ЗАПУЩЕН!</b>\n\n"
+        f"🎁 <b>{auction['title']}</b>\n\n"
+        f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
+        f"📈 Шаг: <b>{auction['step']} руб.</b>\n\n"
+        f"💥 Первая ставка: <b>{auction['min_bid']} руб.</b>\n\n"
+        f"⏰ Завершение: <b>{end_dt.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+        f"Нажмите «Участвовать», чтобы сделать ставку!"
+    )
+
+    if auction["photo_id"]:
+        msg = await context.bot.send_photo(
+            chat_id=auction["channel_id"],
+            photo=auction["photo_id"],
+            caption=channel_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_participate_keyboard(auction_id),
+        )
+    else:
+        msg = await context.bot.send_message(
+            chat_id=auction["channel_id"],
+            text=channel_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_participate_keyboard(auction_id),
+        )
+
+    await db.update_auction_status(auction_id, "active", channel_message_id=msg.message_id)
+
+    schedule_auction_end(context.job_queue, auction_id, end_dt, context)
 
 
 async def auction_end_callback(context):
@@ -22,7 +69,7 @@ async def auction_end_callback(context):
     if not top_bid:
         await db.update_auction_status(auction_id, "finished")
         await context.bot.send_message(
-            chat_id=CHANNEL_ID,
+            chat_id=auction["channel_id"],
             text=(
                 f"🔴 <b>РОЗЫГРЫШ ЗАВЕРШЁН</b>\n\n"
                 f"🎁 {auction['title']}\n\n"
@@ -45,7 +92,7 @@ async def auction_end_callback(context):
     )
 
     await context.bot.send_message(
-        chat_id=CHANNEL_ID,
+        chat_id=auction["channel_id"],
         text=winner_text,
         parse_mode=ParseMode.HTML,
     )
@@ -68,18 +115,29 @@ async def auction_end_callback(context):
 def schedule_auction_end(job_queue, auction_id, end_dt, context):
     now = datetime.now()
     delay = (end_dt - now).total_seconds()
+    job_queue.run_once(auction_end_callback, when=max(delay, 0), data=auction_id, name=f"auction_end_{auction_id}")
 
-    if delay <= 0:
-        job_queue.run_once(auction_end_callback, when=0, data=auction_id, name=f"auction_end_{auction_id}")
-    else:
-        job_queue.run_once(auction_end_callback, when=delay, data=auction_id, name=f"auction_end_{auction_id}")
+
+def schedule_auction_start(job_queue, auction_id, start_dt, context):
+    now = datetime.now()
+    delay = (start_dt - now).total_seconds()
+    job_queue.run_once(auction_start_callback, when=max(delay, 0), data=auction_id, name=f"auction_start_{auction_id}")
 
 
 async def restore_scheduled_jobs(context):
-    auctions = await db.get_active_auctions()
+    auctions = await db.get_all_auctions_by_status(["active", "scheduled"])
     now = datetime.now()
 
     for auction in auctions:
-        end_dt = datetime.fromisoformat(auction["end_time"])
-        if end_dt > now:
-            schedule_auction_end(context.job_queue, auction["id"], end_dt, context)
+        if auction["status"] == "scheduled":
+            start_dt = datetime.fromisoformat(auction["start_time"])
+            if start_dt > now:
+                schedule_auction_start(context.job_queue, auction["id"], start_dt, context)
+                continue
+            await _publish_auction(context, auction)
+            continue
+
+        if auction["status"] == "active":
+            end_dt = datetime.fromisoformat(auction["end_time"])
+            if end_dt > now:
+                schedule_auction_end(context.job_queue, auction["id"], end_dt, context)

@@ -5,25 +5,21 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 import database as db
-from keyboards import get_bid_keyboard, get_participate_keyboard
+from keyboards import get_bid_keyboard
 
 
-async def cb_participate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    auction_id = int(query.data.split(":")[1])
-
+async def show_bid_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE, auction_id: int):
     auction = await db.get_auction(auction_id)
     if not auction or auction["status"] != "active":
-        await query.answer("Этот розыгрыш уже не активен.", show_alert=True)
+        await update.message.reply_text("⛔️ Этот розыгрыш уже не активен.")
         return
 
     end_dt = datetime.fromisoformat(auction["end_time"])
     if datetime.now() >= end_dt:
-        await query.answer("Розыгрыш уже завершён.", show_alert=True)
+        await update.message.reply_text("⛔️ Розыгрыш уже завершён.")
         return
 
-    user = query.from_user
+    user = update.effective_user
     current_user_bid = await db.get_user_bid(auction_id, user.id)
 
     if current_user_bid:
@@ -32,36 +28,40 @@ async def cb_participate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_amount = auction["min_bid"]
 
     step = auction["step"]
-
-    if current_amount == auction["min_bid"] and not current_user_bid:
-        text = (
-            f"🎯 <b>{auction['title']}</b>\n\n"
-            f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
-            f"📈 Шаг: <b>{step} руб.</b>\n\n"
-            f"Нажмите «+{step} руб.» чтобы сделать первую ставку!"
-        )
-    else:
-        top_bid = await db.get_top_bid(auction_id)
-        leader_text = ""
-        if top_bid and top_bid["user_id"] != user.id:
-            leader_text = f"👑 Текущий лидер: @{top_bid['username'] or 'неизвестный'} — <b>{top_bid['amount']} руб.</b>\n\n"
-
-        text = (
-            f"🎯 <b>{auction['title']}</b>\n\n"
-            f"📊 Ваша текущая ставка: <b>{current_amount} руб.</b>\n\n"
-            f"{leader_text}"
-            f"Нажмите «+{step} руб.» чтобы увеличить ставку, "
-            f"затем «Принять ставку» для подтверждения."
-        )
+    top_bid = await db.get_top_bid(auction_id)
 
     context.user_data["current_amount"] = current_amount
     context.user_data["auction_id"] = auction_id
 
-    await query.edit_message_text(
+    leader_text = ""
+    if top_bid:
+        if top_bid["user_id"] == user.id:
+            leader_text = f"🏆 Вы сейчас лидер! Ставка: <b>{top_bid['amount']} руб.</b>\n\n"
+        else:
+            leader_text = f"👑 Текущий лидер: @{top_bid['username'] or 'неизвестный'} — <b>{top_bid['amount']} руб.</b>\n\n"
+
+    text = (
+        f"🎯 <b>{auction['title']}</b>\n\n"
+        f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
+        f"📈 Шаг: <b>{step} руб.</b>\n\n"
+        f"📊 Ваша ставка: <b>{current_amount} руб.</b>\n\n"
+        f"{leader_text}"
+        f"Нажмите «+{step} руб.» чтобы увеличить ставку, "
+        f"затем «Принять ставку» для подтверждения."
+    )
+
+    await update.message.reply_text(
         text,
         parse_mode=ParseMode.HTML,
         reply_markup=get_bid_keyboard(auction_id, current_amount, step),
     )
+
+
+async def cb_participate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    auction_id = int(query.data.split(":")[1])
+    await show_bid_dialog(update, context, auction_id)
 
 
 async def cb_increase(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -87,7 +87,7 @@ async def cb_increase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         f"🎯 <b>{auction['title']}</b>\n\n"
-        f"📊 Ваша текущая ставка: <b>{new_amount} руб.</b>\n\n"
+        f"📊 Ваша ставка: <b>{new_amount} руб.</b>\n\n"
         f"{leader_text}"
         f"Нажмите «+{auction['step']} руб.» чтобы увеличить, "
         f"или «Принять ставку» для подтверждения."
