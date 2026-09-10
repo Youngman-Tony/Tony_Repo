@@ -25,7 +25,7 @@ from keyboards import (
     get_channel_select_keyboard,
 )
 
-TITLE, MIN_BID, STEP, START_DATE, START_TIME, END_DATE, END_TIME, PHOTO, CHANNEL_SELECT, PREVIEW = range(10)
+TITLE, DESCRIPTION, MIN_BID, STEP, START_DATE, START_TIME, END_DATE, END_TIME, PHOTO, CHANNEL_SELECT, PREVIEW = range(11)
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -263,6 +263,14 @@ async def cb_create_auction_for_channel(update: Update, context: ContextTypes.DE
 
 async def get_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["title"] = update.message.text
+    await update.message.reply_text(
+        "📝 Теперь введите описание розыгрыша (что разыгрывается, условия):"
+    )
+    return DESCRIPTION
+
+
+async def get_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["description"] = update.message.text
     await update.message.reply_text("💰 Введите минимальную ставку (в рублях):")
     return MIN_BID
 
@@ -427,6 +435,7 @@ async def _create_auction_record(user_id, context, query_message=None):
     auction_id = await db.create_auction(
         admin_id=user_id,
         title=context.user_data["title"],
+        description=context.user_data.get("description"),
         min_bid=context.user_data["min_bid"],
         step=context.user_data["step"],
         start_time=context.user_data["start_dt"],
@@ -463,8 +472,10 @@ def _build_auction_text(auction):
     start = datetime.fromisoformat(auction["start_time"]).strftime("%d.%m.%Y %H:%M")
     end = datetime.fromisoformat(auction["end_time"]).strftime("%d.%m.%Y %H:%M")
     status_map = {"draft": "📝 Черновик", "scheduled": "⏰ Запланирован", "active": "🟢 Активен", "finished": "🔴 Завершён", "cancelled": "❌ Отменён"}
+    desc = f"\n📋 Описание: <b>{auction['description']}</b>\n" if auction.get("description") else ""
     return (
         f"🎯 <b>{auction['title']}</b>\n\n"
+        f"{desc}"
         f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
         f"📈 Шаг увеличения: <b>{auction['step']} руб.</b>\n\n"
         f"📅 Начало: <b>{start}</b>\n"
@@ -534,9 +545,11 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for j in jobs:
         j.schedule_removal()
 
+    desc_part = f"📋 <b>{auction['description']}</b>\n\n" if auction.get("description") else ""
     channel_text = (
         f"🎯 <b>РОЗЫГРЫШ ЗАПУЩЕН!</b>\n\n"
         f"🎁 <b>{auction['title']}</b>\n\n"
+        f"{desc_part}"
         f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
         f"📈 Шаг: <b>{auction['step']} руб.</b>\n\n"
         f"⏰ Завершение: <b>{end_dt.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
@@ -722,6 +735,7 @@ def get_admin_conversation_handler():
         ],
         states={
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_title)],
+            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)],
             MIN_BID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_min_bid)],
             STEP: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_step)],
             START_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_start_date)],

@@ -1,4 +1,6 @@
+import functools
 import logging
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -9,6 +11,7 @@ from telegram.ext import (
 
 from config import BOT_TOKEN
 from database import init_db
+from retry import call_with_retry
 from handlers.admin import (
     cmd_start,
     get_admin_conversation_handler,
@@ -20,6 +23,9 @@ from handlers.admin import (
     cb_check_channel,
     cb_my_auctions,
     cb_admin_auction,
+    cb_preview,
+    cb_start_auction,
+    cb_cancel_auction,
     cb_view_bids,
     cb_select_winner_bid,
     cb_finish_early,
@@ -39,11 +45,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# методы Telegram API, вызовы которых оборачиваем в retry
+RETRY_METHODS = (
+    "send_message",
+    "send_photo",
+    "edit_message_text",
+    "edit_message_media",
+    "answer_callback_query",
+    "get_chat",
+    "get_chat_member",
+)
 
-async def post_init(application: Application):
-    await init_db()
-    await restore_scheduled_jobs(application.job_queue)
-    logger.info("Bot started, DB initialized, jobs restored.")
+
+async def error_handler(update, context):
+    logger.error("Exception while handling an update:", exc_info=context.error)
 
 
 def main():
@@ -53,6 +68,17 @@ def main():
         .post_init(post_init)
         .build()
     )
+
+    # оборачиваем сетевые методы бота в логику повторных попыток
+    for method_name in RETRY_METHODS:
+        orig = getattr(app.bot, method_name)
+
+        async def wrapped(*args, _orig=orig, **kwargs):
+            return await call_with_retry(_orig, *args, **kwargs)
+
+        setattr(app.bot, method_name, wrapped)
+
+    app.add_error_handler(error_handler)
 
     admin_conv = get_admin_conversation_handler()
     app.add_handler(admin_conv)
@@ -74,6 +100,9 @@ def main():
 
     app.add_handler(CallbackQueryHandler(cb_my_auctions, pattern=r"^my_auctions$"))
     app.add_handler(CallbackQueryHandler(cb_admin_auction, pattern=r"^admin_auction:"))
+    app.add_handler(CallbackQueryHandler(cb_preview, pattern=r"^preview:"))
+    app.add_handler(CallbackQueryHandler(cb_start_auction, pattern=r"^start_auction:"))
+    app.add_handler(CallbackQueryHandler(cb_cancel_auction, pattern=r"^cancel_auction:"))
     app.add_handler(CallbackQueryHandler(cb_view_bids, pattern=r"^view_bids:"))
     app.add_handler(CallbackQueryHandler(cb_select_winner_bid, pattern=r"^select_winner_bid:"))
     app.add_handler(CallbackQueryHandler(cb_finish_early, pattern=r"^finish_early:"))
@@ -81,6 +110,12 @@ def main():
 
     logger.info("Bot is starting...")
     app.run_polling(allowed_updates=["message", "callback_query"])
+
+
+async def post_init(application: Application):
+    await init_db()
+    await restore_scheduled_jobs(application.job_queue)
+    logger.info("Bot started, DB initialized, jobs restored.")
 
 
 if __name__ == "__main__":

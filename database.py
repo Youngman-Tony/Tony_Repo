@@ -30,6 +30,7 @@ async def init_db():
                 channel_id INTEGER NOT NULL,
                 admin_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
+                description TEXT,
                 min_bid INTEGER NOT NULL,
                 step INTEGER NOT NULL,
                 start_time TEXT NOT NULL,
@@ -53,6 +54,13 @@ async def init_db():
             )
         """)
         await db.commit()
+
+        # миграция: добавляем колонку description, если её нет в старой БД
+        cursor = await db.execute("PRAGMA table_info(auctions)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if "description" not in columns:
+            await db.execute("ALTER TABLE auctions ADD COLUMN description TEXT")
+            await db.commit()
 
 
 # ---------- Админы ----------
@@ -114,11 +122,11 @@ async def remove_channel(admin_id, channel_id):
 
 # ---------- Розыгрыши ----------
 
-async def create_auction(admin_id, title, min_bid, step, start_time, end_time, photo_id=None, channel_id=None):
+async def create_auction(admin_id, title, description, min_bid, step, start_time, end_time, photo_id=None, channel_id=None):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO auctions (admin_id, title, min_bid, step, start_time, end_time, photo_id, status, channel_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?)",
-            (admin_id, title, min_bid, step, start_time, end_time, photo_id, channel_id)
+            "INSERT INTO auctions (admin_id, title, description, min_bid, step, start_time, end_time, photo_id, status, channel_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)",
+            (admin_id, title, description, min_bid, step, start_time, end_time, photo_id, channel_id)
         )
         await db.commit()
         return cursor.lastrowid

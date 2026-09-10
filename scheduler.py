@@ -25,9 +25,11 @@ async def _publish_auction(context, auction):
     start_dt = datetime.fromisoformat(auction["start_time"])
     end_dt = datetime.fromisoformat(auction["end_time"])
 
+    desc_part = f"📋 <b>{auction['description']}</b>\n\n" if auction.get("description") else ""
     channel_text = (
         f"🎯 <b>РОЗЫГРЫШ ЗАПУЩЕН!</b>\n\n"
         f"🎁 <b>{auction['title']}</b>\n\n"
+        f"{desc_part}"
         f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
         f"📈 Шаг: <b>{auction['step']} руб.</b>\n\n"
         f"💥 Первая ставка: <b>{auction['min_bid']} руб.</b>\n\n"
