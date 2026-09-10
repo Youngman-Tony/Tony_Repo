@@ -55,7 +55,7 @@ async def _publish_auction(context, auction):
 
     await db.update_auction_status(auction_id, "active", channel_message_id=msg.message_id)
 
-    schedule_auction_end(context.job_queue, auction_id, end_dt, context)
+    schedule_auction_end(context.job_queue, auction_id, end_dt)
 
 
 async def auction_end_callback(context):
@@ -114,32 +114,33 @@ async def auction_end_callback(context):
         logger.warning(f"Не удалось отправить ЛС победителю {top_bid['user_id']}: {e}")
 
 
-def schedule_auction_end(job_queue, auction_id, end_dt, context):
+def schedule_auction_end(job_queue, auction_id, end_dt):
     now = datetime.now()
     delay = (end_dt - now).total_seconds()
     job_queue.run_once(auction_end_callback, when=max(delay, 0), data=auction_id, name=f"auction_end_{auction_id}")
 
 
-def schedule_auction_start(job_queue, auction_id, start_dt, context):
+def schedule_auction_start(job_queue, auction_id, start_dt):
     now = datetime.now()
     delay = (start_dt - now).total_seconds()
     job_queue.run_once(auction_start_callback, when=max(delay, 0), data=auction_id, name=f"auction_start_{auction_id}")
 
 
-async def restore_scheduled_jobs(context):
+async def restore_scheduled_jobs(app):
     auctions = await db.get_all_auctions_by_status(["active", "scheduled"])
     now = datetime.now()
+    job_queue = app.job_queue
 
     for auction in auctions:
         if auction["status"] == "scheduled":
             start_dt = datetime.fromisoformat(auction["start_time"])
             if start_dt > now:
-                schedule_auction_start(context.job_queue, auction["id"], start_dt, context)
+                schedule_auction_start(job_queue, auction["id"], start_dt)
                 continue
-            await _publish_auction(context, auction)
+            await _publish_auction(app, auction)
             continue
 
         if auction["status"] == "active":
             end_dt = datetime.fromisoformat(auction["end_time"])
             if end_dt > now:
-                schedule_auction_end(context.job_queue, auction["id"], end_dt, context)
+                schedule_auction_end(job_queue, auction["id"], end_dt)

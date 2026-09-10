@@ -122,7 +122,7 @@ def main():
 
 async def post_init(application: Application):
     await init_db()
-    await restore_scheduled_jobs(application.job_queue)
+    await restore_scheduled_jobs(application)
     logger.info("Bot started, DB initialized, jobs restored.")
 
 

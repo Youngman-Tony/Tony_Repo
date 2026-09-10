@@ -535,7 +535,7 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Бот автоматически опубликует его в канале в указанное время."
         )
         from scheduler import schedule_auction_start
-        schedule_auction_start(context.job_queue, auction_id, start_dt, context)
+        schedule_auction_start(context.job_queue, auction_id, start_dt)
         return
 
     await db.update_auction_status(auction_id, "active")
@@ -577,7 +577,7 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("✅ Розыгрыш запущен и опубликован в канале!")
 
     from scheduler import schedule_auction_end
-    schedule_auction_end(context.job_queue, auction_id, end_dt, context)
+    schedule_auction_end(context.job_queue, auction_id, end_dt)
 
 
 async def cb_cancel_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
