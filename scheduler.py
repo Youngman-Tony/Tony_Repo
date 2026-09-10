@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from datetime import datetime
 
 from telegram.constants import ParseMode
@@ -25,16 +25,16 @@ async def _publish_auction(context, auction):
     start_dt = datetime.fromisoformat(auction["start_time"])
     end_dt = datetime.fromisoformat(auction["end_time"])
 
-    desc_part = f"рџ“‹ <b>{auction['description']}</b>\n\n" if auction["description"] else ""
+    desc_part = f"📋 <b>{auction['description']}</b>\n\n" if auction["description"] else ""
     channel_text = (
-        f"рџЋЇ <b>Р РћР—Р«Р“Р Р«РЁ Р—РђРџРЈР©Р•Рќ!</b>\n\n"
-        f"рџЋЃ <b>{auction['title']}</b>\n\n"
+        f"🎯 <b>РОЗЫГРЫШ ЗАПУЩЕН!</b>\n\n"
+        f"🎁 <b>{auction['title']}</b>\n\n"
         f"{desc_part}"
-        f"рџ’° РњРёРЅРёРјР°Р»СЊРЅР°СЏ СЃС‚Р°РІРєР°: <b>{auction['min_bid']} СЂСѓР±.</b>\n"
-        f"рџ“€ РЁР°Рі: <b>{auction['step']} СЂСѓР±.</b>\n\n"
-        f"рџ’Ґ РџРµСЂРІР°СЏ СЃС‚Р°РІРєР°: <b>{auction['min_bid']} СЂСѓР±.</b>\n\n"
-        f"вЏ° Р—Р°РІРµСЂС€РµРЅРёРµ: <b>{end_dt.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-        f"РќР°Р¶РјРёС‚Рµ В«РЈС‡Р°СЃС‚РІРѕРІР°С‚СЊВ», С‡С‚РѕР±С‹ СЃРґРµР»Р°С‚СЊ СЃС‚Р°РІРєСѓ!"
+        f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
+        f"📈 Шаг: <b>{auction['step']} руб.</b>\n\n"
+        f"💥 Первая ставка: <b>{auction['min_bid']} руб.</b>\n\n"
+        f"⏰ Завершение: <b>{end_dt.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+        f"Нажмите «Участвовать», чтобы сделать ставку!"
     )
 
     if auction["photo_id"]:
@@ -73,9 +73,9 @@ async def auction_end_callback(context):
         await context.bot.send_message(
             chat_id=auction["channel_id"],
             text=(
-                f"рџ”ґ <b>Р РћР—Р«Р“Р Р«РЁ Р—РђР’Р•Р РЁРЃРќ</b>\n\n"
-                f"рџЋЃ {auction['title']}\n\n"
-                f"РЎС‚Р°РІРѕРє РЅРµ Р±С‹Р»Рѕ. РџРѕР±РµРґРёС‚РµР»СЊ РЅРµ РѕРїСЂРµРґРµР»С‘РЅ."
+                f"🔴 <b>РОЗЫГРЫШ ЗАВЕРШЁН</b>\n\n"
+                f"🎁 {auction['title']}\n\n"
+                f"Ставок не было. Победитель не определён."
             ),
             parse_mode=ParseMode.HTML,
         )
@@ -86,11 +86,11 @@ async def auction_end_callback(context):
 
     username = top_bid["username"] or str(top_bid["user_id"])
     winner_text = (
-        f"рџЏ† <b>РџРћР‘Р•Р”РРўР•Р›Р¬ Р РћР—Р«Р“Р Р«РЁРђ!</b>\n\n"
-        f"рџЋЃ <b>{auction['title']}</b>\n\n"
-        f"РџРѕР±РµРґРёС‚РµР»СЊ: @{username}\n"
-        f"РЎС‚Р°РІРєР°: <b>{top_bid['amount']} СЂСѓР±.</b>\n\n"
-        f"Р”Р»СЏ РїРѕР»СѓС‡РµРЅРёСЏ РїСЂРёР·Р° РѕР±СЂР°С‚РёС‚РµСЃСЊ Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ РєР°РЅР°Р»Р°."
+        f"🏆 <b>ПОБЕДИТЕЛЬ РОЗЫГРЫША!</b>\n\n"
+        f"🎁 <b>{auction['title']}</b>\n\n"
+        f"Победитель: @{username}\n"
+        f"Ставка: <b>{top_bid['amount']} руб.</b>\n\n"
+        f"Для получения приза обратитесь к администратору канала."
     )
 
     await context.bot.send_message(
@@ -103,15 +103,15 @@ async def auction_end_callback(context):
         await context.bot.send_message(
             chat_id=top_bid["user_id"],
             text=(
-                f"рџЋ‰ <b>РџРѕР·РґСЂР°РІР»СЏРµРј!</b>\n\n"
-                f"Р’С‹ РїРѕР±РµРґРёР»Рё РІ СЂРѕР·С‹РіСЂС‹С€Рµ В«{auction['title']}В»!\n"
-                f"Р’Р°С€Р° СЃС‚Р°РІРєР°: <b>{top_bid['amount']} СЂСѓР±.</b>\n\n"
-                f"Р”Р»СЏ РїРѕР»СѓС‡РµРЅРёСЏ РїСЂРёР·Р° СЃРІСЏР¶РёС‚РµСЃСЊ СЃ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј РєР°РЅР°Р»Р°."
+                f"🎉 <b>Поздравляем!</b>\n\n"
+                f"Вы победили в розыгрыше «{auction['title']}»!\n"
+                f"Ваша ставка: <b>{top_bid['amount']} руб.</b>\n\n"
+                f"Для получения приза свяжитесь с администратором канала."
             ),
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
-        logger.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ Р›РЎ РїРѕР±РµРґРёС‚РµР»СЋ {top_bid['user_id']}: {e}")
+        logger.warning(f"Не удалось отправить ЛС победителю {top_bid['user_id']}: {e}")
 
 
 def schedule_auction_end(job_queue, auction_id, end_dt):
