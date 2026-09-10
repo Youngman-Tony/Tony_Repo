@@ -1,6 +1,7 @@
 import functools
 import logging
 
+from telegram import Bot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -61,22 +62,29 @@ async def error_handler(update, context):
     logger.error("Exception while handling an update:", exc_info=context.error)
 
 
+def _wrap_bot_methods():
+    # ППР: ExtBot запрещает setattr на экземпляре, патчим методы на уровне класса Bot
+    for method_name in RETRY_METHODS:
+        orig = getattr(Bot, method_name, None)
+        if not orig:
+            continue
+
+        async def wrapped(self, *args, _orig=orig, **kwargs):
+            return await call_with_retry(_orig, self, *args, **kwargs)
+
+        wrapped.__name__ = method_name
+        setattr(Bot, method_name, wrapped)
+
+
 def main():
+    _wrap_bot_methods()
+
     app = (
         Application.builder()
         .token(BOT_TOKEN)
         .post_init(post_init)
         .build()
     )
-
-    # оборачиваем сетевые методы бота в логику повторных попыток
-    for method_name in RETRY_METHODS:
-        orig = getattr(app.bot, method_name)
-
-        async def wrapped(*args, _orig=orig, **kwargs):
-            return await call_with_retry(_orig, *args, **kwargs)
-
-        setattr(app.bot, method_name, wrapped)
 
     app.add_error_handler(error_handler)
 
