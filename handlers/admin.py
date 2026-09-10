@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from telegram import Update, InputMediaPhoto
+from telegram import Update, InputMediaPhoto, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -75,7 +75,8 @@ async def cb_my_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "📢 У вас пока нет подключённых каналов.\n\n"
             "Добавьте бота в канал как администратора, затем нажмите "
-            "«➕ Добавить канал» и перешлите любое сообщение из канала."
+            "«➕ Добавить канал» и перешлите любое сообщение из канала.",
+            reply_markup=get_channels_keyboard(channels)
         )
     else:
         await query.edit_message_text(
@@ -107,7 +108,10 @@ async def cb_add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📢 Чтобы подключить канал:\n\n"
         "1. Добавьте бота администратором в свой канал\n"
         "2. Перешлите сюда ЛЮБОЕ сообщение из этого канала\n\n"
-        "Бот определит канал автоматически."
+        "Бот определит канал автоматически.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data="my_channels")]
+        ]),
     )
     context.user_data["awaiting_channel"] = True
 
