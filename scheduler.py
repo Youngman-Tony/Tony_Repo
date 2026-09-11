@@ -3,6 +3,7 @@ from datetime import datetime
 
 from telegram.constants import ParseMode
 
+from config import MSK
 import database as db
 from keyboards import get_participate_keyboard
 
@@ -27,12 +28,11 @@ async def _publish_auction(context, auction):
 
     desc_part = f"📋 <b>{auction['description']}</b>\n\n" if auction["description"] else ""
     channel_text = (
-        f"🎯 <b>РОЗЫГРЫШ ЗАПУЩЕН!</b>\n\n"
+        f"🎯 <b>АУКЦИОН ЗАПУЩЕН!</b>\n\n"
         f"🎁 <b>{auction['title']}</b>\n\n"
         f"{desc_part}"
-        f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
-        f"📈 Шаг: <b>{auction['step']} руб.</b>\n\n"
-        f"💥 Первая ставка: <b>{auction['min_bid']} руб.</b>\n\n"
+        f"💰 Первоначальная цена: <b>{auction['min_bid']} руб.</b>\n"
+        f"📈 Минимальная ставка: <b>{auction['step']} руб.</b>\n\n"
         f"⏰ Завершение: <b>{end_dt.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
         f"Нажмите «Участвовать», чтобы сделать ставку!"
     )
@@ -73,7 +73,7 @@ async def auction_end_callback(context):
         await context.bot.send_message(
             chat_id=auction["channel_id"],
             text=(
-                f"🔴 <b>РОЗЫГРЫШ ЗАВЕРШЁН</b>\n\n"
+                f"🔴 <b>АУКЦИОН ЗАВЕРШЁН</b>\n\n"
                 f"🎁 {auction['title']}\n\n"
                 f"Ставок не было. Победитель не определён."
             ),
@@ -86,7 +86,7 @@ async def auction_end_callback(context):
 
     username = top_bid["username"] or str(top_bid["user_id"])
     winner_text = (
-        f"🏆 <b>ПОБЕДИТЕЛЬ РОЗЫГРЫША!</b>\n\n"
+        f"🏆 <b>ПОБЕДИТЕЛЬ АУКЦИОНА!</b>\n\n"
         f"🎁 <b>{auction['title']}</b>\n\n"
         f"Победитель: @{username}\n"
         f"Ставка: <b>{top_bid['amount']} руб.</b>\n\n"
@@ -104,7 +104,7 @@ async def auction_end_callback(context):
             chat_id=top_bid["user_id"],
             text=(
                 f"🎉 <b>Поздравляем!</b>\n\n"
-                f"Вы победили в розыгрыше «{auction['title']}»!\n"
+                f"Вы победили в аукционе «{auction['title']}»!\n"
                 f"Ваша ставка: <b>{top_bid['amount']} руб.</b>\n\n"
                 f"Для получения приза свяжитесь с администратором канала."
             ),
@@ -115,20 +115,26 @@ async def auction_end_callback(context):
 
 
 def schedule_auction_end(job_queue, auction_id, end_dt):
-    now = datetime.now()
+    name = f"auction_end_{auction_id}"
+    for j in job_queue.get_jobs_by_name(name):
+        j.schedule_removal()
+    now = datetime.now(MSK)
     delay = (end_dt - now).total_seconds()
-    job_queue.run_once(auction_end_callback, when=max(delay, 0), data=auction_id, name=f"auction_end_{auction_id}")
+    job_queue.run_once(auction_end_callback, when=max(delay, 0), data=auction_id, name=name)
 
 
 def schedule_auction_start(job_queue, auction_id, start_dt):
-    now = datetime.now()
+    name = f"auction_start_{auction_id}"
+    for j in job_queue.get_jobs_by_name(name):
+        j.schedule_removal()
+    now = datetime.now(MSK)
     delay = (start_dt - now).total_seconds()
-    job_queue.run_once(auction_start_callback, when=max(delay, 0), data=auction_id, name=f"auction_start_{auction_id}")
+    job_queue.run_once(auction_start_callback, when=max(delay, 0), data=auction_id, name=name)
 
 
 async def restore_scheduled_jobs(app):
     auctions = await db.get_all_auctions_by_status(["active", "scheduled"])
-    now = datetime.now()
+    now = datetime.now(MSK)
     job_queue = app.job_queue
 
     for auction in auctions:

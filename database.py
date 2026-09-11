@@ -1,6 +1,6 @@
 import aiosqlite
 from datetime import datetime
-from config import DB_PATH
+from config import DB_PATH, MSK
 
 
 async def init_db():
@@ -120,7 +120,7 @@ async def remove_channel(admin_id, channel_id):
         await db.commit()
 
 
-# ---------- Розыгрыши ----------
+# ---------- Аукционы ----------
 
 async def create_auction(admin_id, title, description, min_bid, step, start_time, end_time, photo_id=None, channel_id=None):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -142,7 +142,7 @@ async def get_auction(auction_id):
 async def get_active_auctions():
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        now = datetime.now().isoformat()
+        now = datetime.now(MSK).isoformat()
         cursor = await db.execute(
             "SELECT * FROM auctions WHERE status = 'active' AND start_time <= ? AND end_time > ?",
             (now, now)
@@ -187,8 +187,8 @@ async def set_winner(auction_id, user_id):
 async def add_bid(auction_id, user_id, username, amount):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO bids (auction_id, user_id, username, amount) VALUES (?, ?, ?, ?)",
-            (auction_id, user_id, username, amount)
+            "INSERT INTO bids (auction_id, user_id, username, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+            (auction_id, user_id, username, amount, datetime.now(MSK).isoformat()),
         )
         await db.commit()
         return cursor.lastrowid
@@ -218,7 +218,7 @@ async def get_user_bid(auction_id, user_id):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM bids WHERE auction_id = ? AND user_id = ? ORDER BY amount DESC LIMIT 1",
+            "SELECT * FROM bids WHERE auction_id = ? AND user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
             (auction_id, user_id)
         )
         return await cursor.fetchone()
@@ -237,7 +237,7 @@ async def check_duplicate_bid(auction_id, amount):
 async def get_pending_auctions():
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        now = datetime.now().isoformat()
+        now = datetime.now(MSK).isoformat()
         cursor = await db.execute(
             "SELECT * FROM auctions WHERE status = 'draft'",
         )
@@ -247,7 +247,7 @@ async def get_pending_auctions():
 async def get_auctions_to_end():
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        now = datetime.now().isoformat()
+        now = datetime.now(MSK).isoformat()
         cursor = await db.execute(
             "SELECT * FROM auctions WHERE status = 'active' AND end_time <= ?",
             (now,)

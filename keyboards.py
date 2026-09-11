@@ -3,9 +3,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def get_main_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎁 Создать розыгрыш", callback_data="create_auction")],
+        [InlineKeyboardButton("🎁 Создать аукцион", callback_data="create_auction")],
         [InlineKeyboardButton("📢 Мои каналы", callback_data="my_channels")],
-        [InlineKeyboardButton("📋 Мои розыгрыши", callback_data="my_auctions")],
+        [InlineKeyboardButton("📋 Мои аукционы", callback_data="my_auctions")],
     ])
 
 
@@ -26,7 +26,7 @@ def get_channels_keyboard(channels):
 def get_channel_detail_keyboard(channel_id):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎁 Создать розыгрыш", callback_data=f"create_auction_ch:{channel_id}"),
+            InlineKeyboardButton("🎁 Создать аукцион", callback_data=f"create_auction_ch:{channel_id}"),
             InlineKeyboardButton("🗑 Удалить", callback_data=f"remove_channel:{channel_id}"),
         ],
         [InlineKeyboardButton("🔙 Назад", callback_data="my_channels")],
@@ -99,6 +99,7 @@ def get_admin_auction_detail_keyboard(auction_id, status):
     elif status == "scheduled":
         buttons = [
             [InlineKeyboardButton("🚀 Запустить сейчас", callback_data=f"start_auction:{auction_id}")],
+            [InlineKeyboardButton("⏹ Завершить досрочно", callback_data=f"finish_early:{auction_id}")],
             [InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_auction:{auction_id}")],
         ]
     elif status == "active":
@@ -109,7 +110,7 @@ def get_admin_auction_detail_keyboard(auction_id, status):
     elif status == "finished":
         buttons = [
             [InlineKeyboardButton("📊 Все ставки", callback_data=f"view_bids:{auction_id}")],
-            [InlineKeyboardButton("🏆 Назначить победителя", callback_data=f"select_winner:{auction_id}")],
+            [InlineKeyboardButton("🏆 Назначить победителя", callback_data=f"view_bids:{auction_id}")],
         ]
     buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="my_auctions")])
     return InlineKeyboardMarkup(buttons)

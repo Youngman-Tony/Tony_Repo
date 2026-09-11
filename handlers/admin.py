@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,8 +12,11 @@ from telegram.ext import (
 )
 from telegram.constants import ParseMode
 
+from config import MSK
 import database as db
 from handlers.user import show_bid_dialog
+
+logger = logging.getLogger(__name__)
 from keyboards import (
     get_main_menu_keyboard,
     get_auction_preview_keyboard,
@@ -45,7 +49,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.register_admin(user.id, user.username, user.first_name)
         await update.message.reply_text(
             f"👋 Привет, {user.first_name}!\n\n"
-            f"Вы зарегистрированы как организатор розыгрышей.\n\n"
+            f"Вы зарегистрированы как организатор аукционов.\n\n"
             f"Чтобы начать, добавьте бота в свой канал как администратора, "
             f"затем подключите канал через меню «Мои каналы»."
         )
@@ -95,7 +99,7 @@ async def cb_channel_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.edit_message_text(
         f"📢 <b>{channel['title'] or channel['username'] or channel['channel_id']}</b>\n\n"
-        f"Канал подключён. Теперь можно создавать розыгрыши.",
+        f"Канал подключён. Теперь можно создавать аукционы.",
         parse_mode=ParseMode.HTML,
         reply_markup=get_channel_detail_keyboard(channel_id),
     )
@@ -154,11 +158,18 @@ async def _check_channel(context: ContextTypes.DEFAULT_TYPE, user_id, chat_id_se
 
         bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
         bot_is_admin = bot_member.status in ("administrator", "creator")
+        bot_can_post = False
+        if bot_is_admin:
+            if bot_member.status == "creator":
+                bot_can_post = True
+            elif hasattr(bot_member, "can_post_messages"):
+                bot_can_post = bot_member.can_post_messages
 
         user_member = await context.bot.get_chat_member(chat_id, user_id)
         user_is_admin = user_member.status in ("administrator", "creator")
     except Exception:
         bot_is_admin = False
+        bot_can_post = False
         user_is_admin = False
         chat_id = None
 
@@ -183,6 +194,24 @@ async def _check_channel(context: ContextTypes.DEFAULT_TYPE, user_id, chat_id_se
             f"1. Откройте канал\n"
             f"2. Управление → Администраторы → Добавить администратора\n"
             f"3. Выберите бота и дайте права\n"
+            f"4. Нажмите «✅ Проверить» еще раз"
+        )
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Проверить", callback_data="check_channel")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="my_channels")],
+        ])
+        if hasattr(destination, "edit_message_text"):
+            await destination.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        else:
+            await destination.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        return
+
+    if not bot_can_post:
+        text = (
+            f"⚠️ <b>Бот не имеет права публиковать сообщения.</b>\n\n"
+            f"1. Откройте канал\n"
+            f"2. Управление → Администраторы → Настроить права\n"
+            f"3. Включите «Публикация сообщений»\n"
             f"4. Нажмите «✅ Проверить» еще раз"
         )
         reply_markup = InlineKeyboardMarkup([
@@ -221,10 +250,10 @@ async def _check_channel(context: ContextTypes.DEFAULT_TYPE, user_id, chat_id_se
     text = (
         f"✅ <b>Канал подключён!</b>\n\n"
         f"📢 {name}\n\n"
-        f"Теперь можно создавать розыгрыши."
+        f"Теперь можно создавать аукционы."
     )
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎁 Создать розыгрыш", callback_data=f"create_auction_ch:{chat_id}")],
+        [InlineKeyboardButton("🎁 Создать аукцион", callback_data=f"create_auction_ch:{chat_id}")],
         [InlineKeyboardButton("📢 Мои каналы", callback_data="my_channels")],
     ])
     if hasattr(destination, "edit_message_text"):
@@ -243,12 +272,12 @@ async def cb_remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=get_channels_keyboard(channels))
 
 
-# ---------- Создание розыгрыша ----------
+# ---------- Создание аукциона ----------
 
 async def cb_create_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("📝 Введите описание (название) розыгрыша:")
+    await query.edit_message_text("📝 Введите описание (название) аукциона:")
     return TITLE
 
 
@@ -257,14 +286,14 @@ async def cb_create_auction_for_channel(update: Update, context: ContextTypes.DE
     await query.answer()
     channel_id = int(query.data.split(":")[1])
     context.user_data["channel_id"] = channel_id
-    await query.edit_message_text("📝 Введите описание (название) розыгрыша:")
+    await query.edit_message_text("📝 Введите описание (название) аукциона:")
     return TITLE
 
 
 async def get_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["title"] = update.message.text
     await update.message.reply_text(
-        "📝 Теперь введите описание розыгрыша (что разыгрывается, условия):"
+        "📝 Теперь введите описание аукциона (что разыгрывается, условия):"
     )
     return DESCRIPTION
 
@@ -291,7 +320,7 @@ async def get_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введите положительное число:")
         return STEP
     context.user_data["step"] = int(text)
-    await update.message.reply_text("📅 Введите дату начала розыгрыша в формате ДД.ММ.ГГГГ:")
+    await update.message.reply_text("📅 Введите дату начала аукциона в формате ДД.ММ.ГГГГ:")
     return START_DATE
 
 
@@ -315,7 +344,7 @@ async def get_start_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Неверный формат. Введите время в формате ЧЧ:ММ:")
         return START_TIME
     context.user_data["start_time"] = text
-    await update.message.reply_text("📅 Введите дату завершения розыгрыша в формате ДД.ММ.ГГГГ:")
+    await update.message.reply_text("📅 Введите дату завершения аукциона в формате ДД.ММ.ГГГГ:")
     return END_DATE
 
 
@@ -339,7 +368,7 @@ async def get_end_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Неверный формат. Введите время в формате ЧЧ:ММ:")
         return END_TIME
     context.user_data["end_time"] = text
-    await update.message.reply_text("🖼 Отправьте изображение для розыгрыша (или /skip чтобы пропустить):")
+    await update.message.reply_text("🖼 Отправьте изображение для аукциона (или /skip чтобы пропустить):")
     return PHOTO
 
 
@@ -351,10 +380,10 @@ async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     start_dt = datetime.strptime(
         f"{context.user_data['start_date']} {context.user_data['start_time']}", "%d.%m.%Y %H:%M"
-    )
+    ).replace(tzinfo=MSK)
     end_dt = datetime.strptime(
         f"{context.user_data['end_date']} {context.user_data['end_time']}", "%d.%m.%Y %H:%M"
-    )
+    ).replace(tzinfo=MSK)
 
     if end_dt <= start_dt:
         await update.message.reply_text(
@@ -374,10 +403,10 @@ async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     start_dt = datetime.strptime(
         f"{context.user_data['start_date']} {context.user_data['start_time']}", "%d.%m.%Y %H:%M"
-    )
+    ).replace(tzinfo=MSK)
     end_dt = datetime.strptime(
         f"{context.user_data['end_date']} {context.user_data['end_time']}", "%d.%m.%Y %H:%M"
-    )
+    ).replace(tzinfo=MSK)
 
     if end_dt <= start_dt:
         await update.message.reply_text(
@@ -399,7 +428,7 @@ async def _prompt_channel(user_id, context):
             chat_id=user_id,
             text="⚠️ Сначала подключите канал!\n\n"
                  "Меню «📢 Мои каналы» → «➕ Добавить канал» → перешлите "
-                 "сообщение из канала, в котором хотите проводить розыгрыш.",
+                 "сообщение из канала, в котором хотите проводить аукцион.",
             reply_markup=get_main_menu_keyboard(),
         )
         return ConversationHandler.END
@@ -410,7 +439,7 @@ async def _prompt_channel(user_id, context):
 
     await context.bot.send_message(
         chat_id=user_id,
-        text="📢 Выберите канал для розыгрыша:",
+        text="📢 Выберите канал для аукциона:",
         reply_markup=get_channel_select_keyboard(channels),
     )
     return CHANNEL_SELECT
@@ -427,7 +456,7 @@ async def cb_select_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cb_cancel_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("❌ Создание розыгрыша отменено.", reply_markup=get_main_menu_keyboard())
+    await query.edit_message_text("❌ Создание аукциона отменено.", reply_markup=get_main_menu_keyboard())
     return ConversationHandler.END
 
 
@@ -476,8 +505,8 @@ def _build_auction_text(auction):
     return (
         f"🎯 <b>{auction['title']}</b>\n\n"
         f"{desc}"
-        f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
-        f"📈 Шаг увеличения: <b>{auction['step']} руб.</b>\n\n"
+        f"💰 Первоначальная цена: <b>{auction['min_bid']} руб.</b>\n"
+        f"📈 Минимальная ставка: <b>{auction['step']} руб.</b>\n\n"
         f"📅 Начало: <b>{start}</b>\n"
         f"📅 Завершение: <b>{end}</b>\n\n"
         f"Статус: {status_map.get(auction['status'], auction['status'])}"
@@ -493,30 +522,28 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auction = await db.get_auction(auction_id)
 
     if not auction:
-        await query.message.reply_text("❌ Розыгрыш не найден.")
-        return
+        await query.message.reply_text("❌ Аукцион не найден.")
+        return ConversationHandler.END
 
     if auction["status"] not in ("draft", "scheduled"):
-        await query.message.reply_text("❌ Этот розыгрыш уже запущен или завершён.")
-        return
+        await query.message.reply_text("❌ Этот аукцион уже запущен или завершён.")
+        return ConversationHandler.END
 
     channel_id = auction["channel_id"]
     start_dt = datetime.fromisoformat(auction["start_time"])
     end_dt = datetime.fromisoformat(auction["end_time"])
-    now = datetime.now()
+    now = datetime.now(MSK)
 
     if start_dt > now:
         await db.update_auction_status(auction_id, "scheduled")
         await query.message.reply_text(
-            f"⏰ Розыгрыш запланирован на {start_dt.strftime('%d.%m.%Y %H:%M')}. "
+            f"⏰ Аукцион запланирован на {start_dt.strftime('%d.%m.%Y %H:%M')}. "
             f"Бот автоматически опубликует его в канале в указанное время."
         )
         await query.message.edit_reply_markup(reply_markup=None)
         from scheduler import schedule_auction_start
         schedule_auction_start(context.job_queue, auction_id, start_dt)
-        return
-
-    await db.update_auction_status(auction_id, "active")
+        return ConversationHandler.END
 
     # убираем отложенный авто-старт, если он был запланирован
     jobs = context.job_queue.get_jobs_by_name(f"auction_start_{auction_id}")
@@ -525,11 +552,11 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     desc_part = f"📋 <b>{auction['description']}</b>\n\n" if auction["description"] else ""
     channel_text = (
-        f"🎯 <b>РОЗЫГРЫШ ЗАПУЩЕН!</b>\n\n"
+        f"🎯 <b>АУКЦИОН ЗАПУЩЕН!</b>\n\n"
         f"🎁 <b>{auction['title']}</b>\n\n"
         f"{desc_part}"
-        f"💰 Минимальная ставка: <b>{auction['min_bid']} руб.</b>\n"
-        f"📈 Шаг: <b>{auction['step']} руб.</b>\n\n"
+        f"💰 Первоначальная цена: <b>{auction['min_bid']} руб.</b>\n"
+        f"📈 Минимальная ставка: <b>{auction['step']} руб.</b>\n\n"
         f"⏰ Завершение: <b>{end_dt.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
         f"Нажмите «Участвовать», чтобы сделать ставку!"
     )
@@ -552,11 +579,12 @@ async def cb_start_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await db.update_auction_status(auction_id, "active", channel_message_id=msg.message_id)
 
-    await query.message.reply_text("✅ Розыгрыш запущен и опубликован в канале!")
+    await query.message.reply_text("✅ Аукцион запущен и опубликован в канале!")
     await query.message.edit_reply_markup(reply_markup=None)
 
     from scheduler import schedule_auction_end
     schedule_auction_end(context.job_queue, auction_id, end_dt)
+    return ConversationHandler.END
 
 
 async def cb_cancel_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -564,11 +592,11 @@ async def cb_cancel_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     auction_id = int(query.data.split(":")[1])
     await db.update_auction_status(auction_id, "cancelled")
-    await query.message.reply_text("❌ Розыгрыш отменён.")
+    await query.message.reply_text("❌ Аукцион отменён.")
     await query.message.edit_reply_markup(reply_markup=None)
 
 
-# ---------- Список розыгрышей ----------
+# ---------- Список аукционов ----------
 
 async def cb_my_auctions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -576,11 +604,11 @@ async def cb_my_auctions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auctions = await db.get_all_auctions_by_admin(query.from_user.id)
     if not auctions:
         await query.edit_message_text(
-            "📋 У вас пока нет розыгрышей.\n\nНажмите «Создать розыгрыш» чтобы начать."
+            "📋 У вас пока нет аукционов.\n\nНажмите «Создать аукцион» чтобы начать."
         )
         return
     await query.edit_message_text(
-        "📋 Ваши розыгрыши:",
+        "📋 Ваши аукционы:",
         reply_markup=get_admin_auctions_keyboard(auctions)
     )
 
@@ -591,7 +619,7 @@ async def cb_admin_auction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auction_id = int(query.data.split(":")[1])
     auction = await db.get_auction(auction_id)
     if not auction:
-        await query.edit_message_text("❌ Розыгрыш не найден.")
+        await query.edit_message_text("❌ Аукцион не найден.")
         return
     text = _build_auction_text(auction)
     await query.edit_message_text(
@@ -645,7 +673,7 @@ async def cb_select_winner_bid(update: Update, context: ContextTypes.DEFAULT_TYP
     auction = await db.get_auction(auction_id)
 
     winner_text = (
-        f"🏆 <b>ПОБЕДИТЕЛЬ РОЗЫГРЫША!</b>\n\n"
+        f"🏆 <b>ПОБЕДИТЕЛЬ АУКЦИОНА!</b>\n\n"
         f"🎁 {auction['title']}\n\n"
         f"Победитель: @{winning_bid['username'] or winning_bid['user_id']}\n"
         f"Ставка: <b>{winning_bid['amount']} руб.</b>\n\n"
@@ -666,40 +694,53 @@ async def cb_finish_early(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     auction_id = int(query.data.split(":")[1])
 
-    top_bid = await db.get_top_bid(auction_id)
     auction = await db.get_auction(auction_id)
-
-    if not top_bid:
-        await db.update_auction_status(auction_id, "finished")
-        await context.bot.send_message(
-            chat_id=auction["channel_id"],
-            text=f"🔴 Розыгрыш «{auction['title']}» завершён досрочно.\n"
-                 f"Ставок не было, победитель не определён.",
-            parse_mode=ParseMode.HTML,
-        )
-        await query.edit_message_text("✅ Розыгрыш завершён (без ставок).")
+    if not auction:
+        await query.edit_message_text("❌ Аукцион не найден.")
         return
 
-    await db.set_winner(auction_id, top_bid["user_id"])
+    if auction["status"] not in ("active", "scheduled"):
+        await query.edit_message_text("❌ Аукцион уже завершён или отменён.")
+        return
+
+    # снимаем запланированные авто-задачи
+    try:
+        for j in context.job_queue.get_jobs_by_name(f"auction_start_{auction_id}"):
+            j.schedule_removal()
+        for j in context.job_queue.get_jobs_by_name(f"auction_end_{auction_id}"):
+            j.schedule_removal()
+    except Exception:
+        pass
+
+    top_bid = await db.get_top_bid(auction_id)
+
+    if top_bid:
+        await db.set_winner(auction_id, top_bid["user_id"])
+        winner_line = (
+            f"🏆 Победитель: @{top_bid['username'] or top_bid['user_id']} — "
+            f"<b>{top_bid['amount']} руб.</b>"
+        )
+    else:
+        winner_line = "Ставок не было, победитель не определён."
+
     await db.update_auction_status(auction_id, "finished")
 
-    winner_text = (
-        f"🏆 <b>ПОБЕДИТЕЛЬ РОЗЫГРЫША!</b>\n\n"
-        f"🎁 {auction['title']}\n\n"
-        f"Победитель: @{top_bid['username'] or top_bid['user_id']}\n"
-        f"Ставка: <b>{top_bid['amount']} руб.</b>\n\n"
-        f"Для получения приза обратитесь к администратору канала."
-    )
+    if auction["channel_message_id"]:
+        channel_text = (
+            f"🔴 <b>АУКЦИОН ЗАВЕРШЁН ДОСРОЧНО</b>\n\n"
+            f"🎁 <b>{auction['title']}</b>\n\n"
+            f"{winner_line}"
+        )
+        try:
+            await context.bot.send_message(
+                chat_id=auction["channel_id"],
+                text=channel_text,
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as e:
+            logger.warning(f"Не удалось уведомить канал о завершении аукциона {auction_id}: {e}")
 
-    await context.bot.send_message(
-        chat_id=auction["channel_id"],
-        text=winner_text,
-        parse_mode=ParseMode.HTML,
-    )
-
-    await query.edit_message_text(
-        f"✅ Розыгрыш завершён досрочно. Победитель: @{top_bid['username'] or top_bid['user_id']}"
-    )
+    await query.edit_message_text(f"✅ Аукцион завершён досрочно. {winner_line}")
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -736,4 +777,5 @@ def get_admin_conversation_handler():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )

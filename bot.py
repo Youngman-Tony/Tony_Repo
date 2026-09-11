@@ -60,6 +60,22 @@ RETRY_METHODS = (
 async def error_handler(update, context):
     logger.error("Exception while handling an update:", exc_info=context.error)
 
+    if update is None:
+        return
+
+    try:
+        if update.callback_query:
+            await update.callback_query.answer(
+                "⚠️ Произошла ошибка. Попробуйте позже.",
+                show_alert=True,
+            )
+        elif update.effective_message:
+            await update.effective_message.reply_text(
+                "⚠️ Произошла ошибка при выполнении операции. Попробуйте позже."
+            )
+    except Exception:
+        pass
+
 
 def _wrap_bot_methods():
     # ППР: ExtBot запрещает setattr на экземпляре, патчим методы на уровне класса Bot

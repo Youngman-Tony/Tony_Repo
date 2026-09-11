@@ -6,7 +6,7 @@ from telegram.error import TimedOut, NetworkError, RetryAfter, BadRequest
 logger = logging.getLogger(__name__)
 
 
-async def call_with_retry(func, *args, max_retries=5, delay=0.8, **kwargs):
+async def call_with_retry(func, *args, max_retries=3, delay=0.5, **kwargs):
     last_exc = None
     for attempt in range(max_retries):
         try:
